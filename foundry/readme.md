@@ -11,6 +11,11 @@ foundry 中文文档
 https://learnblockchain.cn/docs/foundry/i18n/zh/getting-started/installation.html
 
 
+youtube 项目跟写
+
+https://github.com/orgs/Cyfrin/repositories?q=foundry
+
+
 forge init “项目名”
 forge init --empty "项目名"
 
