@@ -220,3 +220,275 @@ contract Lottery is VRFConsumerBaseV2Plus, AutomationCompatibleInterface {
 
 在 Foundry 这类框架中，你可以很方便地在 `setUp()` 函数里部署这些 Mock 合约，为每一轮测试准备好一个干净、可控的“沙盒环境”。
 
+
+
+这三个导入语句分别引入了 OpenZeppelin 库中的三个核心模块，它们共同为开发一个功能完整、符合标准的 NFT（ERC721）合约提供了基础。
+
+让我逐一解释每个模块的作用：
+
+---
+
+## 1. `ERC721` - NFT 的标准接口实现
+
+```solidity
+import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+```
+
+**这是什么？**
+- ERC721 是以太坊上 NFT（非同质化代币）的标准规范
+- OpenZeppelin 提供的这个 `ERC721` 合约是**该标准的一个完整、安全的实现**
+
+**它提供了什么功能？**
+- **所有权管理**：记录每个 NFT 归哪个地址所有
+- **转账功能**：`transferFrom`, `safeTransferFrom` 等标准转账方法
+- **授权功能**：`approve`, `setApprovalForAll` 等授权机制
+- **查询功能**：`balanceOf`, `ownerOf` 等查询接口
+- **事件发射**：`Transfer`, `Approval` 等标准事件
+
+**如何使用？**
+```solidity
+// 你的 NFT 合约继承 ERC721，就自动拥有了所有标准功能
+contract MyNFT is ERC721 {
+    constructor() ERC721("MyNFT", "MNFT") {
+        // 构造函数中传入代币名称和符号
+    }
+    
+    function mintNFT(address to, uint256 tokenId) public {
+        _mint(to, tokenId); // 铸造新的 NFT
+    }
+}
+```
+
+---
+
+## 2. `Ownable` - 所有权管理（权限控制）
+
+```solidity
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+```
+
+**这是什么？**
+- 一个简单的**权限控制合约**，用于管理合约的"所有者"（owner）
+- 通常用于限制某些敏感操作只能由合约部署者执行
+
+**它提供了什么功能？**
+- **所有者标识**：记录合约的 owner 地址（通常是部署者）
+- **onlyOwner 修饰符**：限制函数只能由 owner 调用
+- **所有权转移**：`transferOwnership` 可以将所有权转给他人
+- **放弃所有权**：`renounceOwnership` 可以放弃所有权（变成无主合约）
+
+**如何使用？**
+```solidity
+contract MyNFT is ERC721, Ownable {
+    
+    // 只有 owner 可以铸造新 NFT
+    function mintNFT(address to, uint256 tokenId) public onlyOwner {
+        _mint(to, tokenId);
+    }
+    
+    // 只有 owner 可以设置基础 URI
+    function setBaseURI(string memory baseURI) public onlyOwner {
+        // 设置逻辑...
+    }
+}
+```
+
+---
+
+## 3. `Base64` - Base64 编码工具
+
+```solidity
+import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
+```
+
+**这是什么？**
+- 一个**工具库**，提供了将数据编码为 Base64 格式的函数
+- 在 NFT 开发中特别有用，用于生成符合标准的 `tokenURI`
+
+**它解决了什么问题？**
+- NFT 的 `tokenURI` 需要返回一个 JSON 格式的元数据
+- 链上动态生成的 NFT（如根据某个特征生成不同的图片/属性）需要**在链上直接生成 JSON 数据**
+- JSON 数据需要编码为 Base64 格式，以便以 `data:application/json;base64,xxxxx` 的形式返回
+
+**如何使用？**
+```solidity
+using Base64 for string; // 或者直接调用库函数
+
+function tokenURI(uint256 tokenId) public view override returns (string memory) {
+    // 创建动态的 JSON 元数据
+    string memory json = string(
+        abi.encodePacked(
+            '{"name": "My NFT #', Strings.toString(tokenId), '",',
+            '"description": "A dynamically generated NFT",',
+            '"image": "data:image/svg+xml;base64,', _generateSVG(tokenId), '"}'
+        )
+    );
+    
+    // 将 JSON 编码为 Base64 格式
+    return string(abi.encodePacked(
+        "data:application/json;base64,",
+        Base64.encode(bytes(json))  // 这里使用 Base64 编码
+    ));
+}
+```
+
+---
+
+## 🎯 三者如何协同工作？
+
+当你开发一个动态 NFT（比如根据某个随机特征生成不同样式的艺术收藏品）时，这三个模块会一起发挥作用：
+
+| 模块 | 扮演的角色 | 示例场景 |
+| :--- | :--- | :--- |
+| **ERC721** | **NFT 的骨架** | 定义了 NFT 的基本行为：铸造、转账、查询所有权等 |
+| **Ownable** | **管理员权限** | 确保只有合约所有者可以铸造 NFT 或设置关键参数 |
+| **Base64** | **元数据生成器** | 动态生成每个 NFT 的图片和属性描述，编码后返回给 OpenSea 等市场展示 |
+
+**完整示例：**
+```solidity
+contract DynamicNFT is ERC721, Ownable {
+    using Base64 for string;
+    
+    uint256 private _tokenIds;
+    
+    constructor() ERC721("Dynamic NFT", "DNFT") {}
+    
+    function mint() public onlyOwner {
+        uint256 newTokenId = _tokenIds++;
+        _mint(msg.sender, newTokenId);
+    }
+    
+    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        // 动态生成 SVG 图片和 JSON 元数据
+        string memory svg = _generateSVG(tokenId);
+        string memory json = string(abi.encodePacked(
+            '{"name": "NFT #', Strings.toString(tokenId), '",',
+            '"image": "data:image/svg+xml;base64,', Base64.encode(bytes(svg)), '"}'
+        ));
+        
+        return string(abi.encodePacked(
+            "data:application/json;base64,",
+            Base64.encode(bytes(json))
+        ));
+    }
+}
+```
+
+---
+
+## 📦 安装依赖
+
+要使用这些模块，你需要先在项目中安装 OpenZeppelin 合约库：
+
+```bash
+forge install OpenZeppelin/openzeppelin-contracts --no-commit
+```
+
+然后在 `foundry.toml` 中配置 remappings：
+
+```toml
+remappings = ['@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/']
+```
+
+这样你就可以在你的合约中导入和使用这些模块了。这三个模块合在一起，构成了一个安全、标准、功能完整的 NFT 合约的基础。
+
+
+在 Foundry 项目中安装 Solmate 只需一条命令。
+
+### 📦 安装命令
+
+在你的项目根目录（`foundry.toml` 所在目录）下运行：
+
+```bash
+forge install transmissions11/solmate
+```
+
+这个命令会：
+- 将 Solmate 库作为 git 子模块下载到 `lib/solmate` 目录
+- 自动在 `.gitmodules` 文件中记录依赖信息
+
+> **指定版本**：如果需要安装特定版本，可以加上 `@` 标签，例如：
+> ```bash
+> forge install transmissions11/solmate@v7
+> ```
+> 或指定特定 commit：
+> ```bash
+> forge install transmissions11/solmate@b5c9aed
+> ```
+
+### 📝 配置导入路径
+
+Foundry 会自动为你生成依赖的 remappings。安装完成后，运行以下命令查看：
+
+```bash
+forge remappings
+```
+
+你应该能看到类似这样的输出：
+```
+ds-test/=lib/solmate/lib/ds-test/src/
+forge-std/=lib/forge-std/src/
+solmate/=lib/solmate/src/
+```
+
+这意味着你可以直接在合约中用 `import "solmate/..."` 的方式导入 Solmate 模块。
+
+### ✅ 在合约中使用 Solmate
+
+安装完成后，你就可以在合约中导入并使用 Solmate 的 Gas 优化版 ERC20、ERC721 等模块了：
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.22;
+
+// 导入 Solmate 的 ERC721 实现（Gas 优化版本）
+import {ERC721} from "solmate/tokens/ERC721.sol";
+
+// 导入 Solmate 的 ERC20 实现
+import {ERC20} from "solmate/tokens/ERC20.sol";
+
+// 导入 Solmate 的工具库
+import {LibString} from "solmate/utils/LibString.sol";
+import {SafeTransferLib} from "solmate/utils/SafeTransferLib.sol";
+
+contract MyNFT is ERC721 {
+    constructor(string memory name, string memory symbol)
+        ERC721(name, symbol)
+    {}
+    
+    function mint(address to) external {
+        _mint(to, ++currentTokenId);
+    }
+}
+```
+
+### 📚 Solmate 主要模块
+
+Solmate 主要包含以下几个模块 ：
+
+| 模块路径 | 说明 |
+| :--- | :--- |
+| `solmate/tokens/` | Gas 优化的 ERC20、ERC721、ERC1155、ERC4626 实现 |
+| `solmate/auth/` | 授权管理（Owned、RolesAuthority） |
+| `solmate/utils/` | 工具库（SafeTransferLib、FixedPointMathLib、LibString、ReentrancyGuard 等） |
+
+### 🔧 更新或删除依赖
+
+- **更新到最新版本**：
+  ```bash
+  forge update lib/solmate
+  ```
+
+- **删除依赖**：
+  ```bash
+  forge remove solmate
+  ```
+
+### 💡 与 OpenZeppelin 的区别
+
+Solmate 和 OpenZeppelin 都是智能合约库，主要区别在于 ：
+
+- **Solmate**：专注于 Gas 优化，代码更精简，Gas 消耗可节省约 30%；适合对 Gas 成本敏感的生产环境
+- **OpenZeppelin**：功能更全面，内置安全检查更完善，适合需要更多功能和安全保障的场景
+
+两者可以同时使用——你可以在项目里根据具体需求选择使用 Solmate 的某些模块和 OpenZeppelin 的其他模块。
